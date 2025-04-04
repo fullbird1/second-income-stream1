@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import yfinance as yf
-import datetime
-import os
 from forex_python.converter import CurrencyRates
+from datetime import datetime, timedelta
+import random
 
 # Set page configuration
 st.set_page_config(
@@ -15,88 +15,63 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Add custom CSS
+# Custom CSS
 st.markdown("""
 <style>
     .main-header {
         font-size: 2.5rem;
-        font-weight: bold;
-        color: #1E3A8A;
+        color: #1E88E5;
+        text-align: center;
         margin-bottom: 1rem;
     }
     .sub-header {
-        font-size: 1.8rem;
-        font-weight: bold;
-        color: #2563EB;
-        margin-top: 1rem;
+        font-size: 1.5rem;
+        color: #1E88E5;
         margin-bottom: 0.5rem;
     }
-    .card {
-        background-color: #F3F4F6;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-    .metric-value {
+    .tier-header {
         font-size: 1.8rem;
+        color: #1E88E5;
+        margin-bottom: 0.5rem;
+    }
+    .dashboard-metric {
+        font-size: 1.2rem;
         font-weight: bold;
-        color: #1E3A8A;
     }
-    .metric-label {
-        font-size: 1rem;
-        color: #4B5563;
+    .dashboard-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #1E88E5;
     }
-    .highlight {
-        background-color: #DBEAFE;
-        padding: 0.5rem;
-        border-radius: 0.25rem;
+    .positive {
+        color: #4CAF50;
+    }
+    .negative {
+        color: #F44336;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # Initialize session state
-if 'currency' not in st.session_state:
-    st.session_state.currency = "USD"
-    st.session_state.exchange_rate = 7.82  # USD to HKD rate
-    st.session_state.total_investment = 165000
+if 'total_investment' not in st.session_state:
+    st.session_state.total_investment = 165000.0
+
+if 'stocks_data' not in st.session_state:
+    st.session_state.stocks_data = None
+
+if 'summary_data' not in st.session_state:
+    st.session_state.summary_data = None
+
+if 'dividend_schedule' not in st.session_state:
+    st.session_state.dividend_schedule = None
+
+if 'refresh_data' not in st.session_state:
     st.session_state.refresh_data = False
-    st.session_state.stocks_data = None  # Will be initialized later
-    st.session_state.summary_data = None  # Will be initialized later
-    st.session_state.dividend_schedule = None  # Will be initialized later
-    st.session_state.show_add_stock = False
+
+if 'edit_mode' not in st.session_state:
     st.session_state.edit_mode = False
 
-# Function to format currency
-def format_currency(amount, currency="USD"):
-    if currency == "USD":
-        return f"${amount:,.2f}"
-    elif currency == "HKD":
-        return f"HK${amount:,.2f}"
-
-# Function to convert currency
-def convert_currency(amount, from_currency="USD", to_currency="USD"):
-    if from_currency == to_currency:
-        return amount
-    elif from_currency == "USD" and to_currency == "HKD":
-        return amount * st.session_state.exchange_rate
-    elif from_currency == "HKD" and to_currency == "USD":
-        return amount / st.session_state.exchange_rate
-
-# Function to fetch stock data
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def fetch_stock_data(symbol):
-    try:
-        stock = yf.Ticker(symbol)
-        hist = stock.history(period="1mo")
-        if not hist.empty:
-            current_price = hist['Close'].iloc[-1]
-            return current_price
-        return None
-    except Exception as e:
-        st.error(f"Error fetching data for {symbol}: {e}")
-        return None
-
-# Initialize stock data
+# Function to initialize stock data
 def initialize_stock_data():
     # If we already have stock data in session state, use that
     if st.session_state.stocks_data is not None:
@@ -138,32 +113,29 @@ def initialize_stock_data():
             {'Symbol': 'RDTE', 'Name': 'Robo Defense Tech ETF', 'Dividend Yield (%)': 22.45, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
             {'Symbol': 'GOOGL', 'Name': 'Alphabet Inc.', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
             {'Symbol': 'AMZN', 'Name': 'Amazon.com Inc.', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'SCHG', 'Name': 'Schwab U.S. Large-Cap Growth ETF', 'Dividend Yield (%)': 0.52, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'PLTY', 'Name': 'Playtech PLC', 'Dividend Yield (%)': 3.25, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'MSTY', 'Name': 'Mosaic Company', 'Dividend Yield (%)': 2.78, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'TSYY', 'Name': 'Trane Technologies PLC', 'Dividend Yield (%)': 1.15, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'AIPI', 'Name': 'AI Powered International Equity ETF', 'Dividend Yield (%)': 1.87, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'SCHG', 'Name': 'Schwab U.S. Large-Cap Growth ETF', 'Dividend Yield (%)': 0.58, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'PLTY', 'Name': 'Playtech plc', 'Dividend Yield (%)': 3.25, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'MSTY', 'Name': 'Misty Robotics Inc.', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'TSYY', 'Name': 'Treasury Yield ETF', 'Dividend Yield (%)': 4.85, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'AIPI', 'Name': 'AI Powered Innovation ETF', 'Dividend Yield (%)': 0.12, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
             {'Symbol': 'HOOD', 'Name': 'Robinhood Markets Inc.', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
             {'Symbol': 'HIMS', 'Name': 'Hims & Hers Health Inc.', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
             {'Symbol': 'S', 'Name': 'SentinelOne Inc.', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'NFLP', 'Name': 'Neuberger Berman Flexible Real Estate Income Fund', 'Dividend Yield (%)': 12.35, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'SVOL', 'Name': 'Simplify Volatility Premium ETF', 'Dividend Yield (%)': 15.42, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'NBIS', 'Name': 'Neuberger Berman Income Strategy ETF', 'Dividend Yield (%)': 8.76, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'BX', 'Name': 'Blackstone Inc.', 'Dividend Yield (%)': 3.45, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'AMDL', 'Name': 'Advanced Micro Devices Inc.', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'UPRO', 'Name': 'ProShares UltraPro S&P 500 ETF', 'Dividend Yield (%)': 0.32, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'MSTU', 'Name': 'MicroSectors U.S. Big Oil Index 3X Leveraged ETN', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
-            {'Symbol': 'XYZY', 'Name': 'XYZ Yield ETF (Placeholder)', 'Dividend Yield (%)': 5.75, 'Allocation (%)': 0, 'Allocation Amount ($)': 0}
+            {'Symbol': 'NFLP', 'Name': 'Netflix Partners LLC', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'SVOL', 'Name': 'Simplify Volatility Premium ETF', 'Dividend Yield (%)': 15.75, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'NBIS', 'Name': 'Neuberger Berman InnovAsia Fund', 'Dividend Yield (%)': 2.35, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'BX', 'Name': 'Blackstone Inc.', 'Dividend Yield (%)': 3.85, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'AMDL', 'Name': 'Advanced Micro Devices Leveraged ETF', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'UPRO', 'Name': 'ProShares UltraPro S&P 500 ETF', 'Dividend Yield (%)': 0.65, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'MSTU', 'Name': 'MicroStrategy Ultra ETF', 'Dividend Yield (%)': 0.0, 'Allocation (%)': 0, 'Allocation Amount ($)': 0},
+            {'Symbol': 'XYZY', 'Name': 'XYZ Yield Corp', 'Dividend Yield (%)': 8.45, 'Allocation (%)': 0, 'Allocation Amount ($)': 0}
         ]
     }
     
-    # Update allocation amounts based on current investment amount
-    stocks_data = recalculate_allocations(stocks_data, st.session_state.total_investment)
-    
-    # Create summary data
+    # Calculate summary data
     summary_data = calculate_summary_data(stocks_data, st.session_state.total_investment)
     
-    # Create dividend payment schedule
+    # Generate dividend schedule
     dividend_schedule = generate_dividend_schedule(stocks_data)
     
     # Store in session state
@@ -173,133 +145,45 @@ def initialize_stock_data():
     
     return stocks_data, summary_data, dividend_schedule
 
-# Function to recalculate allocations based on investment amount
-def recalculate_allocations(stocks_data, investment_amount):
-    # Calculate total allocation percentage for each tier
-    tier_allocations = {
-        'Tier 1': 55,
-        'Tier 2': 25,
-        'Tier 3': 5,
-        'Additional': 0
-    }
-    
-    # Cash reserve is 15% of total investment
-    cash_reserve = investment_amount * 0.15
-    investable_amount = investment_amount - cash_reserve
-    
-    # Recalculate allocation amounts for each stock
-    for tier, stocks in stocks_data.items():
-        tier_amount = investable_amount * (tier_allocations[tier] / 100)
-        
-        # Calculate total allocation percentage within tier
-        total_tier_allocation_pct = sum(stock['Allocation (%)'] for stock in stocks)
-        
-        if total_tier_allocation_pct > 0:
-            # Update allocation amounts proportionally
-            for stock in stocks:
-                stock['Allocation Amount ($)'] = tier_amount * (stock['Allocation (%)'] / total_tier_allocation_pct)
-    
-    return stocks_data
-
-# Function to calculate summary data
-def calculate_summary_data(stocks_data, investment_amount):
-    # Calculate total allocation and income for each tier
-    tier_totals = {
-        'Tier 1': {'allocation': 0, 'income': 0},
-        'Tier 2': {'allocation': 0, 'income': 0},
-        'Tier 3': {'allocation': 0, 'income': 0}
-    }
-    
-    for tier, stocks in stocks_data.items():
-        if tier != 'Additional':
-            for stock in stocks:
-                tier_totals[tier]['allocation'] += stock['Allocation Amount ($)']
-                tier_totals[tier]['income'] += stock['Allocation Amount ($)'] * stock['Dividend Yield (%)'] / 100
-    
-    # Cash reserve (15% of total investment)
-    cash_reserve = investment_amount * 0.15
-    
-    # Create summary data
-    total_allocation = sum(tier['allocation'] for tier in tier_totals.values()) + cash_reserve
-    total_income = sum(tier['income'] for tier in tier_totals.values())
-    
-    summary_data = {
-        'Category': ['Tier 1 (Anchor Funds)', 'Tier 2 (Index-Based Funds)', 'Tier 3 (High-Yield Funds)', 'Cash Reserve', 'Total'],
-        'Allocation (%)': [
-            round(tier_totals['Tier 1']['allocation'] / investment_amount * 100, 2),
-            round(tier_totals['Tier 2']['allocation'] / investment_amount * 100, 2),
-            round(tier_totals['Tier 3']['allocation'] / investment_amount * 100, 2),
-            round(cash_reserve / investment_amount * 100, 2),
-            100
-        ],
-        'Allocation Amount ($)': [
-            tier_totals['Tier 1']['allocation'],
-            tier_totals['Tier 2']['allocation'],
-            tier_totals['Tier 3']['allocation'],
-            cash_reserve,
-            investment_amount
-        ],
-        'Expected Annual Income ($)': [
-            tier_totals['Tier 1']['income'],
-            tier_totals['Tier 2']['income'],
-            tier_totals['Tier 3']['income'],
-            0,
-            total_income
-        ],
-        'Yield on Allocation (%)': [
-            round(tier_totals['Tier 1']['income'] / tier_totals['Tier 1']['allocation'] * 100, 2) if tier_totals['Tier 1']['allocation'] > 0 else 0,
-            round(tier_totals['Tier 2']['income'] / tier_totals['Tier 2']['allocation'] * 100, 2) if tier_totals['Tier 2']['allocation'] > 0 else 0,
-            round(tier_totals['Tier 3']['income'] / tier_totals['Tier 3']['allocation'] * 100, 2) if tier_totals['Tier 3']['allocation'] > 0 else 0,
-            0,
-            round(total_income / investment_amount * 100, 2)
-        ]
-    }
-    
-    return summary_data
-
-# Function to generate dividend schedule
-def generate_dividend_schedule(stocks_data):
-    dividend_schedule = []
-    current_date = datetime.datetime.now()
-    
-    # Generate dividend payments for the next 12 months
-    for tier, stocks in stocks_data.items():
-        if tier != 'Additional':
-            for stock in stocks:
-                symbol = stock['Symbol']
-                dividend_yield = stock['Dividend Yield (%)']
-                allocation = stock['Allocation Amount ($)']
-                
-                # Calculate monthly dividend amount
-                monthly_dividend = (allocation * dividend_yield / 100) / 12
-                
-                # Generate payment dates (simplified - one payment per month)
-                for i in range(1, 13):
-                    payment_date = current_date + datetime.timedelta(days=30*i)
-                    dividend_schedule.append({
-                        'Symbol': symbol,
-                        'Payment Date': payment_date.strftime('%Y-%m-%d'),
-                        'Amount': monthly_dividend,
-                        'Tier': tier
-                    })
-    
-    return dividend_schedule
-
-# Function to add a new stock
-def add_stock(tier, symbol, name, dividend_yield, allocation_pct):
+# Function to delete a stock
+def delete_stock(tier, symbol):
     # Get current stocks data
     stocks_data, summary_data, dividend_schedule = initialize_stock_data()
     
-    # Create new stock entry
+    # Find and remove the stock
+    stocks_data[tier] = [stock for stock in stocks_data[tier] if stock['Symbol'] != symbol]
+    
+    # Recalculate allocations
+    stocks_data = recalculate_allocations(stocks_data, st.session_state.total_investment)
+    
+    # Update summary data
+    summary_data = calculate_summary_data(stocks_data, st.session_state.total_investment)
+    
+    # Update dividend schedule
+    dividend_schedule = generate_dividend_schedule(stocks_data)
+    
+    # Update session state
+    st.session_state.stocks_data = stocks_data
+    st.session_state.summary_data = summary_data
+    st.session_state.dividend_schedule = dividend_schedule
+
+# Function to add a stock
+def add_stock(tier, symbol, name, dividend_yield, allocation_percentage):
+    # Get current stocks data
+    stocks_data, summary_data, dividend_schedule = initialize_stock_data()
+    
+    # Calculate allocation amount
+    allocation_amount = (allocation_percentage / 100) * st.session_state.total_investment
+    
+    # Add the new stock
     new_stock = {
         'Symbol': symbol,
         'Name': name,
-        'Dividend Yield (%)': float(dividend_yield),
-        'Allocation (%)': float(allocation_pct),
-        'Allocation Amount ($)': 0  # Will be calculated in recalculate_allocations
+        'Dividend Yield (%)': dividend_yield,
+        'Allocation (%)': allocation_percentage,
+        'Allocation Amount ($)': allocation_amount
     }
     
-    # Add to appropriate tier
     stocks_data[tier].append(new_stock)
     
     # Recalculate allocations
@@ -315,6 +199,135 @@ def add_stock(tier, symbol, name, dividend_yield, allocation_pct):
     st.session_state.stocks_data = stocks_data
     st.session_state.summary_data = summary_data
     st.session_state.dividend_schedule = dividend_schedule
+
+# Function to recalculate allocations
+def recalculate_allocations(stocks_data, total_investment):
+    # Calculate total allocation percentage for each tier
+    tier_percentages = {
+        'Tier 1': 55,
+        'Tier 2': 25,
+        'Tier 3': 5
+    }
     
-    retur
-(Content truncated due to size limit. Use line ranges to read in chunks)
+    for tier, percentage in tier_percentages.items():
+        if tier in stocks_data and stocks_data[tier]:
+            # Count stocks in tier
+            num_stocks = len(stocks_data[tier])
+            
+            if num_stocks > 0:
+                # Distribute allocation evenly
+                allocation_per_stock = percentage / num_stocks
+                
+                # Update each stock
+                for stock in stocks_data[tier]:
+                    stock['Allocation (%)'] = allocation_per_stock
+                    stock['Allocation Amount ($)'] = (allocation_per_stock / 100) * total_investment
+    
+    return stocks_data
+
+# Function to calculate summary data
+def calculate_summary_data(stocks_data, total_investment):
+    summary_data = {
+        'Total Investment': total_investment,
+        'Cash Reserve': total_investment * 0.15,  # 15% cash reserve
+        'Tier Allocations': {
+            'Tier 1': {
+                'Percentage': 55,
+                'Amount': total_investment * 0.55,
+                'Annual Income': 0,
+                'Yield': 0
+            },
+            'Tier 2': {
+                'Percentage': 25,
+                'Amount': total_investment * 0.25,
+                'Annual Income': 0,
+                'Yield': 0
+            },
+            'Tier 3': {
+                'Percentage': 5,
+                'Amount': total_investment * 0.05,
+                'Annual Income': 0,
+                'Yield': 0
+            }
+        },
+        'Total Annual Income': 0,
+        'Overall Yield': 0
+    }
+    
+    # Calculate income and yield for each tier
+    for tier in ['Tier 1', 'Tier 2', 'Tier 3']:
+        tier_annual_income = 0
+        
+        for stock in stocks_data[tier]:
+            stock_annual_income = (stock['Allocation Amount ($)'] * stock['Dividend Yield (%)']) / 100
+            tier_annual_income += stock_annual_income
+        
+        summary_data['Tier Allocations'][tier]['Annual Income'] = tier_annual_income
+        
+        # Calculate tier yield
+        if summary_data['Tier Allocations'][tier]['Amount'] > 0:
+            summary_data['Tier Allocations'][tier]['Yield'] = (tier_annual_income / summary_data['Tier Allocations'][tier]['Amount']) * 100
+        
+        # Add to total income
+        summary_data['Total Annual Income'] += tier_annual_income
+    
+    # Calculate overall yield
+    if total_investment > 0:
+        summary_data['Overall Yield'] = (summary_data['Total Annual Income'] / total_investment) * 100
+    
+    return summary_data
+
+# Function to generate dividend schedule
+def generate_dividend_schedule(stocks_data):
+    # Create a schedule for the next 12 months
+    today = datetime.now()
+    schedule = {}
+    
+    # Define payment frequencies for different stocks
+    frequencies = {
+        'Monthly': 1,
+        'Quarterly': 3,
+        'Semi-Annual': 6,
+        'Annual': 12
+    }
+    
+    # Assign random payment frequencies to stocks
+    for tier in ['Tier 1', 'Tier 2', 'Tier 3']:
+        for stock in stocks_data[tier]:
+            # Determine frequency based on tier
+            if tier == 'Tier 1':
+                # Tier 1 stocks are mostly monthly or quarterly
+                frequency = random.choice(['Monthly', 'Monthly', 'Quarterly'])
+            elif tier == 'Tier 2':
+                # Tier 2 stocks are mostly quarterly
+                frequency = random.choice(['Monthly', 'Quarterly', 'Quarterly'])
+            else:
+                # Tier 3 stocks have varied frequencies
+                frequency = random.choice(['Monthly', 'Quarterly', 'Semi-Annual'])
+            
+            # Determine next payment date (random day in next month)
+            next_month = today.month % 12 + 1
+            next_year = today.year + (1 if next_month < today.month else 0)
+            next_payment = datetime(next_year, next_month, min(28, today.day))
+            
+            # Calculate monthly income
+            annual_income = (stock['Allocation Amount ($)'] * stock['Dividend Yield (%)']) / 100
+            monthly_income = annual_income / 12
+            
+            # Calculate payment amount based on frequency
+            payment_amount = monthly_income * frequencies[frequency]
+            
+            # Add to schedule
+            for i in range(12):
+                # Calculate payment month
+                payment_month = (next_payment.month - 1 + i * frequencies[frequency]) % 12 + 1
+                payment_year = next_payment.year + (payment_month < next_payment.month or 
+                                                  (payment_month == next_payment.month and 
+                                                   i * frequencies[frequency] > 0))
+                
+                # Skip if not a payment month for this frequency
+                if i % frequencies[frequency] != 0:
+                    continue
+                
+                # Create month key
+                month_key = f"{payment_year}-{payment_month:02d}"
